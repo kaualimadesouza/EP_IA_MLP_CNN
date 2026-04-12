@@ -26,11 +26,6 @@ Thumbs.db
 # Jupyter
 .ipynb_checkpoints/
 
-# Data (large files)
-data/*.csv
-data/*.gz
-data/*.zip
-!data/.gitkeep
 
 # Outputs (large files)
 outputs/*
