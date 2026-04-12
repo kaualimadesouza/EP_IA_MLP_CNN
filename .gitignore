@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtualenv
+venv/
+.venv/
+env/
+
+# uv
+uv.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data (large files)
+data/*.csv
+data/*.gz
+data/*.zip
+!data/.gitkeep
+
+# Outputs (large files)
+outputs/*
+!outputs/.gitkeep
+*.pkl
+*.pth
+*.h5
