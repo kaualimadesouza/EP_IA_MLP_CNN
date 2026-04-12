@@ -9,13 +9,10 @@ repos:
     rev: v0.12.1
     hooks:
       - id: ruff
-        name: ruff
-        args: ["check", "--fix", "."]
-        types_or: [python, pyi, jupyter]
+        args: ["--fix"]
       - id: ruff
         name: ruff-imports
-        args: ["check", "--select", "I", "--fix", "."]
-        types_or: [python, pyi, jupyter]
+        args: ["--select", "I", "--fix"]
       - id: ruff-format
         name: ruff-format
         types_or: [python, pyi, jupyter]
