@@ -54,10 +54,11 @@ class MLP:
     def treinar(
         self, dados_treino: list[Amostra], taxa_aprendizado: float, epocas: int
     ):
-        # TODO: Loop de epocas
-        # TODO: Para cada amostra: forward + backpropagation
+        for epoca in range(epocas):
+            # TODO: Para cada amostra: forward + backpropagation
+            self.forward(dados_treino[0].entrada)
+
         # TODO: Calcular e guardar o erro da epoca
-        pass
 
     def testar(self, dados_teste: list[Amostra]):
         # TODO: Para cada amostra: forward e comparar com esperado
