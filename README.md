@@ -2,75 +2,102 @@
 
 Trabalho da disciplina **Inteligencia Artificial (ACH2016)**, USP EACH, 1o semestre de 2026.
 
+## Integrantes
+
+- Isabelle da Silva Tobias - NUSP 15525991 (T04)
+- Kevin Rodrigues Nunes    - NUSP 15676030 (T94)
+- Kauã Lima de Souza       - NUSP 15674702 (T94)
+- Victor Yodono            - NUSP 13829040 (T94)
+
 ## Objetivos
 
-1. **MLP (Multilayer Perceptron)**, Implementacao do zero (sem frameworks de redes neurais), treinada com Backpropagation.
-   - Datasets: portas logicas (OR, AND, XOR), CARACTERES, CARACTERES COMPLETO
+1. **MLP (Multilayer Perceptron)** - Implementacao do zero (sem frameworks de redes neurais), treinada com Backpropagation em sua versao de Gradiente Descendente.
+   - Datasets: portas logicas (OR, AND, XOR), CARACTERES_REDUZIDO, CARACTERES_COMPLETO.
 
-2. **CNN (Convolutional Neural Network)**, Implementacao com framework, testada no Fashion MNIST.
+2. **CNN (Convolutional Neural Network)** - (Em andamento)
 
 ## Estrutura
 
 ```
 EP_IA_MLP_CNN/
 ├── src/
-│   ├── mlp/           # Objetivo 1: MLP from scratch
-│   └── cnn/           # Objetivo 2: CNN com framework
-├── data/              # Datasets
-├── outputs/           # Pesos, erros, hiperparametros
-├── docs/              # Enunciado e documentacao
+│   ├── mlp/                # Objetivo 1: MLP from scratch
+│   │   ├── main.py         # run() + main() + entry point (orquestracao)
+│   │   ├── entities.py     # Neuronio, Camada, MLP (forward, backprop)
+│   │   ├── datasets.py     # carregamento dos datasets
+│   │   ├── saidas.py       # ResultadoExperimento + funcoes salvar_* (txt/csv/png)
+│   │   ├── config.py       # hiperparametros por dataset
+│   │   └── value_objects.py
+│   └── cnn/                # Objetivo 2: CNN
+├── data/                   # Datasets brutos
+├── saidas/
+│   ├── mlp/                # Pesos, erros, hiperparametros, matrizes de confusao (Obj 1)
+│   └── cnn/                # (Obj 2)
+├── docs/                   # Especificacao e exemplo numerico da professora
+├── Makefile
 ├── pyproject.toml
 └── README.md
 ```
 
-## Por que uv ao inves de pip?
-
-Neste projeto usamos o [uv](https://docs.astral.sh/uv/) como gerenciador de pacotes. Ele substitui pip, venv e pip-tools num unico comando.
-
-**Diferenca pratica:**
-
-Com pip (forma tradicional):
-```bash
-python -m venv .venv            # cria o ambiente virtual
-source .venv/bin/activate       # ativa o ambiente
-pip install -r requirements.txt # instala dependencias
-```
-
-Com uv:
-```bash
-uv sync                         # faz tudo de uma vez
-```
-
-`uv sync` le o `pyproject.toml`, cria o `.venv` automaticamente, resolve versoes e instala tudo. Nao precisa de `requirements.txt`, as dependencias ficam no `pyproject.toml`.
-
-Para rodar scripts dentro do ambiente:
-```bash
-uv run python src/mlp/main.py   # roda com o .venv ativo automaticamente
-```
-
-Ou ative o venv manualmente e use `python` direto:
-```bash
-source .venv/bin/activate
-python src/mlp/main.py
-```
-
 ## Setup
+
+Usamos o [uv](https://docs.astral.sh/uv/) como gerenciador de pacotes (substitui pip + venv + pip-tools num comando so). Rode uma vez:
 
 ```bash
 make install
 ```
 
-Isso instala o uv (se necessario), as dependencias e configura os hooks de pre-commit.
+Isso instala o uv (se precisar), cria o `.venv`, instala dependencias e configura os hooks de pre-commit.
 
-## Uso
+## Como rodar
+
+### Objetivo 1: MLP
+
+```bash
+make run-mlp
+```
+
+Roda treinamento + teste pros 5 datasets em sequencia (OR, AND, XOR, CARACTERES_REDUZIDO, CARACTERES_COMPLETO). Os hiperparametros de cada dataset estao em `src/mlp/config.py`.
+
+Alternativamente, com o venv ativo:
 
 ```bash
 source .venv/bin/activate
 python src/mlp/main.py
-python src/cnn/main.py
 ```
 
-## Entrega
+### Objetivo 2: CNN
 
-- Data limite: **2 de junho de 2026, 23h55**
-- Via e-Disciplinas
+```bash
+make run-cnn
+```
+
+### Limpar os arquivos de saida
+
+```bash
+make clean
+```
+
+## Arquivos de saida (por dataset)
+
+Pra cada dataset, o MLP gera em `saidas/mlp/<dataset>/`:
+
+| Arquivo | Conteudo |
+|---|---|
+| `hiperparametros.txt` | taxa, epocas, arquitetura, resultado final |
+| `pesos_iniciais.txt`  | snapshot dos pesos antes do treino |
+| `pesos_finais.txt`    | pesos depois do treino |
+| `erro_por_epoca.csv`  | MSE de cada epoca |
+| `saidas_teste.csv`    | classe esperada vs classe predita por amostra |
+| `mse.png`             | grafico de evolucao do MSE (treino + validacao) |
+| `matriz_confusao.png` | matriz de confusao em heatmap |
+
+## Decisoes de design
+
+- **Ativacao**: sigmoide (`1 / (1 + e^(-x))`), seguindo o exemplo numerico da professora.
+- **Inicializacao dos pesos**: Xavier/Glorot uniforme (`L = sqrt(6/(fan_in+fan_out))`). Motivo: pesos muito grandes saturam a sigmoide, muito pequenos colapsam o sinal.
+- **Nomenclatura**: segue o livro Fausett (pagina 294): `v_ij`, `w_jk`, `z_in_j`, `z_j`, `y_in_k`, `y_k`, `t_k`, `alpha`, `delta`.
+- **Split dos dados**:
+  - OR/AND/XOR: as 4 amostras em treino/validacao/teste (dataset pequeno demais pra dividir).
+  - CARACTERES_REDUZIDO: pool dos 3 arquivos (limpo + ruido + ruido20), shuffle, split 80/10/10.
+  - CARACTERES_COMPLETO: shuffle previo aleatorio, split 80/10/10.

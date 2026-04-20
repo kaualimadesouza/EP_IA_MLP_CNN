@@ -1,18 +1,114 @@
-"""Objetivo 1: MLP from scratch with Backpropagation."""
+"""Objetivo 1: MLP from scratch with Backpropagation.
 
-from pathlib import Path
+Integrantes:
+- Isabelle da Silva Tobias - NUSP 15525991 (T04)
+- Kevin Rodrigues Nunes    - NUSP 15676030 (T94)
+- Kauã Lima de Souza       - NUSP 15674702 (T94)
+- Victor Yodono            - NUSP 13829040 (T94)
+"""
 
-import pandas as pd
+import os
+import time
+
+from config import HIPERPARAMETROS, config
 from datasets import carregar_dados
-from entities import MLP
+from entities import MLP, Camada, Neuronio
 from value_objects import DataChoiceEnum, Dataset
 
+from saidas import (
+    ResultadoExperimento,
+    acrescentar_resultados_finais,
+    salvar_erro_por_epoca,
+    salvar_grafico_mse,
+    salvar_hiperparametros,
+    salvar_matriz_confusao,
+    salvar_pesos,
+    salvar_saidas_teste,
+)
 
-def salvar_erro_por_epoca(historico: list[float], caminho: str) -> None:
-    """Salva o MSE de cada epoca em CSV (requisito da especificacao)."""
-    Path(caminho).parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(enumerate(historico, 1), columns=["epoca", "mse"]).to_csv(
-        caminho, index=False, float_format="%.6f"
+
+def run(
+    data_choice: DataChoiceEnum = DataChoiceEnum.CARACTERES_COMPLETO,
+    taxa_aprendizado: float = 0.1,
+    epocas: int = 1000,
+    num_neuronios_oculta: int = 10,
+) -> ResultadoExperimento:
+    """Carrega os dados, treina e testa a MLP. Retorna um ResultadoExperimento."""
+    # 1. Carregar os dados, de forma que ja fiquem no formato certo pra treinar a MLP.
+    dataset: Dataset = carregar_dados(data_choice)
+
+    # 2. Definir arquitetura e criar a MLP com inicializacao de pesos.
+    # Sao 3 camadas: entrada, oculta e saida.
+    # Entrada = numero de atributos do dataset
+    # Ocultas = hiperparametro definido pelo grupo
+    # Saida = numero de classes/rotulos
+    arquitetura = [dataset.num_entradas, num_neuronios_oculta, dataset.num_saidas]
+    mlp = MLP(arquitetura)
+
+    # Salva os hiperparametros (arquitetura + inicializacao) no comeco do experimento.
+    caminho_hp = config.caminho_saida(
+        data_choice.value.lower(), config.nome_arquivo_hiperparametros
+    )
+    salvar_hiperparametros(
+        mlp=mlp,
+        dataset=dataset,
+        data_choice=data_choice,
+        taxa_aprendizado=taxa_aprendizado,
+        epocas=epocas,
+        caminho=caminho_hp,
+    )
+
+    # Snapshot dos pesos ANTES do treino (pra salvar como pesos iniciais depois).
+    # Copiamos manualmente pra evitar guardar referencias aos mesmos neuronios
+    # (senao os "pesos iniciais" mudariam junto com o treino).
+    camadas_iniciais: list[Camada] = []
+    for camada in mlp.camadas:
+        # Cria uma nova camada (o construtor sorteia novos pesos, mas vamos substituir).
+        nova_camada = Camada(len(camada.neuronios), len(camada.neuronios[0].pesos))
+        nova_camada.neuronios = []
+        for neuronio in camada.neuronios:
+            # Copia os pesos (list() cria uma nova lista) e o bias, neuronio por neuronio.
+            copia = Neuronio(list(neuronio.pesos), neuronio.bias)
+            nova_camada.neuronios.append(copia)
+        camadas_iniciais.append(nova_camada)
+
+    print(f"Dataset: {data_choice.name}")
+    print(f"Amostras: {len(dataset.treino)} treino / {len(dataset.teste)} teste")
+    print(f"Arquitetura: {' -> '.join(str(n) for n in arquitetura)} (sigmoide)")
+    print(f"Taxa de aprendizado: {taxa_aprendizado}")
+    print(f"Epocas: {epocas}")
+    print("\n--- Treinamento ---")
+
+    # 3. Treinar a MLP. Passa a validacao junto pra receber os dois historicos (treino+val).
+    t0 = time.time()
+    historico, historico_validacao = mlp.treinar(
+        dataset.treino,
+        taxa_aprendizado,
+        epocas,
+        dados_validacao=dataset.validacao,
+    )
+    tempo_treino = time.time() - t0
+
+    # 4. Testar a MLP (depois de treinada, com os pesos finais).
+    print("\n--- Teste ---")
+    resultados = mlp.testar(dataset.teste)
+    acertos = sum(1 for r in resultados if r.acerto)
+    total = len(resultados)
+    print(f"Acuracia: {acertos}/{total} ({acertos / total:.2%})")
+
+    return ResultadoExperimento(
+        data_choice=data_choice,
+        dataset=dataset,
+        arquitetura=arquitetura,
+        taxa_aprendizado=taxa_aprendizado,
+        epocas=epocas,
+        num_neuronios_oculta=num_neuronios_oculta,
+        mlp=mlp,
+        camadas_iniciais=camadas_iniciais,
+        historico_erro=historico,
+        historico_validacao=historico_validacao,
+        resultados_teste=resultados,
+        tempo_treino=tempo_treino,
     )
 
 
@@ -22,42 +118,60 @@ def main(
     epocas: int = 1000,
     num_neuronios_oculta: int = 10,
 ):
-    # 1. Carregar os dados
-    dataset: Dataset = carregar_dados(data_choice)
+    """Executa o experimento e salva todos os arquivos de saida pedidos."""
+    os.makedirs(config.pasta_saidas, exist_ok=True)
 
-    # 2. Definir a arquitetura e criar a MLP
-    arquitetura = [dataset.num_entradas, num_neuronios_oculta, dataset.num_saidas]
-    mlp = MLP(arquitetura)
+    # Executa o experimento completo (carregar dados, treinar, testar).
+    resultado = run(
+        data_choice=data_choice,
+        taxa_aprendizado=taxa_aprendizado,
+        epocas=epocas,
+        num_neuronios_oculta=num_neuronios_oculta,
+    )
 
-    print(f"Dataset: {data_choice.name}")
-    print(f"Amostras: {len(dataset.treino)} treino / {len(dataset.teste)} teste")
-    print(f"Arquitetura: {' -> '.join(str(n) for n in arquitetura)} (tanh)")
-    print(f"Taxa de aprendizado: {taxa_aprendizado}")
-    print(f"Epocas: {epocas}")
-    print("\n--- Treinamento ---")
-
-    # 3. Treinar a MLP
-    historico = mlp.treinar(dataset.treino, taxa_aprendizado, epocas)
-
-    # 3.1 Salvar o erro por epoca
-    arquivo_erro = f"saidas/{data_choice.value.lower()}_erro_por_epoca.csv"
-    salvar_erro_por_epoca(historico, arquivo_erro)
-
+    prefixo = resultado.prefixo_arquivo
     print("\n--- Arquivos salvos ---")
-    print(f"Erro por epoca: {arquivo_erro}")
 
-    # 4. Testar a MLP
-    print("\n--- Teste ---")
-    resultados = mlp.testar(dataset.teste)
-    acertos = sum(1 for r in resultados if r.acerto)
-    total = len(resultados)
-    print(f"Acuracia: {acertos}/{total} ({acertos / total:.2%})")
+    # Erro por epoca
+    caminho_erro = config.caminho_saida(prefixo, config.nome_arquivo_erro_por_epoca)
+    salvar_erro_por_epoca(resultado.historico_erro, caminho_erro)
+    print(f"Erro por epoca:    {caminho_erro}")
+
+    # Hiperparametros: o arquivo ja foi criado no `run()` antes do treino.
+    # Agora so acrescentamos os resultados finais no mesmo arquivo.
+    caminho_hp = config.caminho_saida(prefixo, config.nome_arquivo_hiperparametros)
+    acrescentar_resultados_finais(resultado, caminho_hp)
+    print(f"Hiperparametros:   {caminho_hp}")
+
+    caminho_pi = config.caminho_saida(prefixo, config.nome_arquivo_pesos_iniciais)
+    salvar_pesos(resultado.camadas_iniciais, "Pesos Iniciais", caminho_pi)
+    print(f"Pesos iniciais:    {caminho_pi}")
+
+    caminho_pf = config.caminho_saida(prefixo, config.nome_arquivo_pesos_finais)
+    salvar_pesos(resultado.mlp.camadas, "Pesos Finais", caminho_pf)
+    print(f"Pesos finais:      {caminho_pf}")
+
+    caminho_st = config.caminho_saida(prefixo, config.nome_arquivo_saidas_teste)
+    salvar_saidas_teste(resultado.resultados_teste, caminho_st)
+    print(f"Saidas de teste:   {caminho_st}")
+
+    # Grafico de evolucao do MSE (treino + validacao)
+    caminho_grafico = config.caminho_saida(prefixo, "mse.png")
+    salvar_grafico_mse(resultado, caminho_grafico)
+    print(f"Grafico MSE:       {caminho_grafico}")
+
+    # Matriz de confusao (heatmap PNG)
+    caminho_matriz = config.caminho_saida(prefixo, "matriz_confusao.png")
+    salvar_matriz_confusao(resultado.resultados_teste, caminho_matriz)
+    print(f"Matriz confusao:   {caminho_matriz}")
 
 
 if __name__ == "__main__":
-    main(
-        data_choice=DataChoiceEnum.CARACTERES_COMPLETO,
-        taxa_aprendizado=0.05,
-        epocas=100000,
-        num_neuronios_oculta=50,
-    )
+    for data_choice_escolha in DataChoiceEnum:
+        hp = HIPERPARAMETROS[data_choice_escolha]
+        main(
+            data_choice=data_choice_escolha,
+            taxa_aprendizado=hp.taxa_aprendizado,
+            epocas=hp.epocas,
+            num_neuronios_oculta=hp.num_neuronios_oculta,
+        )

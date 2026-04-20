@@ -1,16 +1,30 @@
+"""Value objects (dataclasses e enums) compartilhados pelo projeto.
+
+Integrantes:
+- Isabelle da Silva Tobias - NUSP 15525991 (T04)
+- Kevin Rodrigues Nunes    - NUSP 15676030 (T94)
+- Kauã Lima de Souza       - NUSP 15674702 (T94)
+- Victor Yodono            - NUSP 13829040 (T94)
+"""
+
 from dataclasses import dataclass
 from enum import Enum
 
 
 @dataclass
 class Amostra:
+    """Amostra de treino, validacao ou teste: entrada e saida esperada."""
+
     entrada: list[float]
     esperado: list[float]
 
 
 @dataclass
 class Dataset:
+    """Dataset de treino, validacao e teste, com numero de entradas e saidas."""
+
     treino: list[Amostra]
+    validacao: list[Amostra]
     teste: list[Amostra]
     num_entradas: int
     num_saidas: int
@@ -21,9 +35,9 @@ class ResultadoTeste:
     """Resultado de uma amostra de teste depois do forward."""
 
     entrada: list[float]
-    esperado_raw: list[float]  # vetor cru esperado (ex: [1, -1, -1, ...])
-    saida_raw: list[float]  # vetor cru produzido pela rede
-    classe_predita: int  # indice (multiclasse) ou -1/+1 (binario)
+    esperado_raw: list[float]
+    saida_raw: list[float]
+    classe_predita: int
     classe_esperada: int
     acerto: bool
 

@@ -1,0 +1,39 @@
+=== Hiperparametros do Experimento ===
+
+Data do experimento:        2026-04-19 21:44:42
+
+Grupo:
+  - Isabelle da Silva Tobias - NUSP 15525991 (T04)
+  - Kevin Rodrigues Nunes    - NUSP 15676030 (T94)
+  - Kauã Lima de Souza       - NUSP 15674702 (T94)
+  - Victor Yodono            - NUSP 13829040 (T94)
+
+Dataset:                    OR
+Amostras treino:            4 (33%)
+Amostras validacao:         4 (33%)
+Amostras teste:             4 (33%)
+Split:                      Mesmas amostras em treino/validacao/teste (tabela verdade completa)
+Pre-processamento:          Entradas/alvos convertidos de bipolar {-1,+1} para unipolar {0, 1} (compat. sigmoide)
+
+--- Arquitetura (final) ---
+Entradas:                   2
+Camada oculta:              4 neuronios
+Saidas:                     1
+Ativacao:                   sigmoide (logistica)
+Derivada:                   a(1 - a)  (a = saida do neuronio)
+Total de parametros:        17 (8 + 4 + 4 + 1)
+
+--- Inicializacao ---
+Taxa aprendizado (alpha):   0.4
+Epocas:                     500
+Inicializacao dos pesos:    Xavier/Glorot - Uniforme [-L, +L], L=sqrt(6/(fan_in+fan_out))
+Inicializacao do bias:      0.0 (todos os neuronios)
+Condicao de parada:         Nenhuma (treina as N epocas completas)
+Funcao de erro:             MSE (Erro Quadratico Medio)
+Algoritmo:                  Backpropagation com Gradiente Descendente
+
+--- Resultados Finais ---
+MSE inicial:   0.381317
+MSE final:     0.012015
+Acuracia:      100.00% (4/4)
+Tempo treino:  0.0s

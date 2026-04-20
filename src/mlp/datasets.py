@@ -1,4 +1,13 @@
-"""Carregamento dos datasets usados no EP (portas logicas e caracteres)."""
+"""Carregamento dos datasets usados no EP (portas logicas e caracteres).
+
+Integrantes:
+- Isabelle da Silva Tobias - NUSP 15525991 (T04)
+- Kevin Rodrigues Nunes    - NUSP 15676030 (T94)
+- Kauã Lima de Souza       - NUSP 15674702 (T94)
+- Victor Yodono            - NUSP 13829040 (T94)
+"""
+
+import random
 
 import numpy as np
 import pandas as pd
@@ -13,6 +22,11 @@ PATHS_DATASETS: dict[DataChoiceEnum, str] = {
 }
 
 
+def _bipolar_para_unipolar(df: pd.DataFrame) -> pd.DataFrame:
+    """Substitui -1 por 0 e +1 por 1, pra casar com o range da sigmoide."""
+    return df.replace({-1: 0, +1: 1})
+
+
 def _df_para_amostras(df: pd.DataFrame, num_entradas: int) -> list[Amostra]:
     amostras: list[Amostra] = []
     for _, linha in df.iterrows():
@@ -24,19 +38,20 @@ def _df_para_amostras(df: pd.DataFrame, num_entradas: int) -> list[Amostra]:
 
 
 def _carregar_porta_logica(path: str) -> Dataset:
-    df = pd.read_csv(path, header=None)
+    # CSVs vem em formato bipolar {-1, +1}; convertemos pra {0, 1} pra sigmoide.
+    df = _bipolar_para_unipolar(pd.read_csv(path, header=None))
 
-    # O número de entradas é o número de colunas menos 1 (a última é a saída).
+    # O numero de entradas e o numero de colunas menos 1 (a ultima e a saida).
     num_entradas = len(df.columns) - 1
 
-    # As mesmas 4 amostras servem de treino e teste, mas guardamos
-    # em listas diferentes pra evitar aliasing (ex.: se treinar() embaralhar
-    # in-place, o conjunto de teste nao deve ser afetado).
+    # As mesmas 4 amostras servem de treino, validacao e teste (dataset muito pequeno pra dividir).
     treino = _df_para_amostras(df, num_entradas)
+    validacao = _df_para_amostras(df, num_entradas)
     teste = _df_para_amostras(df, num_entradas)
 
     return Dataset(
         treino=treino,
+        validacao=validacao,
         teste=teste,
         num_entradas=num_entradas,
         num_saidas=1,
@@ -44,39 +59,67 @@ def _carregar_porta_logica(path: str) -> Dataset:
 
 
 def _carregar_caracteres_reduzido(pasta: str) -> Dataset:
-    limpo = pd.read_csv(f"{pasta}/limpo.csv", header=None)
-    ruido = pd.read_csv(f"{pasta}/ruido.csv", header=None)
-    ruido20 = pd.read_csv(f"{pasta}/ruido20.csv", header=None)
+    # CSVs vem em formato bipolar {-1, +1}; convertemos pra {0, 1} pra sigmoide.
+    limpo = _bipolar_para_unipolar(pd.read_csv(f"{pasta}/limpo.csv", header=None))
+    ruido = _bipolar_para_unipolar(pd.read_csv(f"{pasta}/ruido.csv", header=None))
+    ruido20 = _bipolar_para_unipolar(pd.read_csv(f"{pasta}/ruido20.csv", header=None))
 
     num_entradas = max(len(limpo.columns), len(ruido.columns), len(ruido20.columns)) - 7
 
-    treino = _df_para_amostras(limpo, num_entradas)
-    teste = _df_para_amostras(ruido, num_entradas) + _df_para_amostras(
-        ruido20, num_entradas
+    todas = (
+        _df_para_amostras(limpo, num_entradas)
+        + _df_para_amostras(ruido, num_entradas)
+        + _df_para_amostras(ruido20, num_entradas)
     )
-    return Dataset(treino=treino, teste=teste, num_entradas=num_entradas, num_saidas=7)
+    random.shuffle(todas)
+    total = len(todas)
+    n_treino = total * 80 // 100
+    n_validacao = total * 10 // 100
+    treino = todas[:n_treino]
+    validacao = todas[n_treino : n_treino + n_validacao]
+    teste = todas[n_treino + n_validacao :]
+    return Dataset(
+        treino=treino,
+        validacao=validacao,
+        teste=teste,
+        num_entradas=num_entradas,
+        num_saidas=7,
+    )
 
 
 def _carregar_caracteres_completo(pasta: str) -> Dataset:
-    # X.npy vem em formato de imagem (N, 10, 12, 1) -> achatamos pra MLP.
-    X = np.load(f"{pasta}/X.npy").reshape(-1, 120)
+    # X.npy vem em formato de imagem (N, 10, 12, 1) bipolar {-1,+1}; achatamos e
+    # convertemos pra unipolar {0, 1} pra casar com o range da sigmoide.
+    X = (np.load(f"{pasta}/X.npy").reshape(-1, 120) + 1) / 2
+    # Y_classe.npy ja vem em {0, 1} one-hot; mantemos como esta pra sigmoide.
     Y = np.load(f"{pasta}/Y_classe.npy")
 
     amostras: list[Amostra] = []
     for x, y in zip(X, Y, strict=True):
         amostras.append(Amostra(entrada=x.tolist(), esperado=y.tolist()))
 
-    # Split 80/20 com seed fixa pra reproducibilidade.
-    corte = len(amostras) * 80 // 100
+    # Shuffle ANTES do split
+    random.shuffle(amostras)
+
+    # Split 80/10/10: treino / validacao / teste
+    total = len(amostras)
+    n_treino = total * 80 // 100
+    n_validacao = total * 10 // 100
+    treino = amostras[:n_treino]
+    validacao = amostras[n_treino : n_treino + n_validacao]
+    teste = amostras[n_treino + n_validacao :]
+
     return Dataset(
-        treino=amostras[:corte],
-        teste=amostras[corte:],
+        treino=treino,
+        validacao=validacao,
+        teste=teste,
         num_entradas=X.shape[1],
         num_saidas=Y.shape[1],
     )
 
 
 def carregar_dados(data_choice: DataChoiceEnum) -> Dataset:
+    """Carrega o dataset escolhido, convertendo pra formato de amostras."""
     path = PATHS_DATASETS[data_choice]
     match data_choice:
         case DataChoiceEnum.OR | DataChoiceEnum.AND | DataChoiceEnum.XOR:
@@ -86,4 +129,4 @@ def carregar_dados(data_choice: DataChoiceEnum) -> Dataset:
         case DataChoiceEnum.CARACTERES_COMPLETO:
             return _carregar_caracteres_completo(path)
         case _:
-            raise ValueError(f"Escolha de dataset inválida: {data_choice!r}")
+            raise ValueError(f"Escolha de dataset invalida: {data_choice!r}")

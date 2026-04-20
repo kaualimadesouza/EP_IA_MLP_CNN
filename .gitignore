@@ -33,3 +33,6 @@ outputs/*
 *.pkl
 *.pth
 *.h5
+
+# Variaveis de ambiente
+.env

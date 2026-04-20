@@ -1,169 +1,204 @@
+"""MLP com uma camada escondida, seguindo a nomenclatura do Fausett (secao 6.1.2):
+v_ij, w_jk, z_in_j, z_j, y_in_k, y_k, t_k, alpha, delta. Bias ficou separado de
+`pesos` por clareza (equivalente ao v_0j do Fausett, so muda a representacao).
+
+Integrantes:
+- Isabelle da Silva Tobias - NUSP 15525991 (T04)
+- Kevin Rodrigues Nunes    - NUSP 15676030 (T94)
+- Kauã Lima de Souza       - NUSP 15674702 (T94)
+- Victor Yodono            - NUSP 13829040 (T94)
+"""
+
 import math
 import random
 
 from value_objects import Amostra, ResultadoTeste
 
 
-def tanh(x: float) -> float:
-    """Função de ativação tangente hiperbolica. Saida em (-1, +1)."""
-    return math.tanh(x)
+def sigmoide(x: float) -> float:
+    """f(x) = 1 / (1 + e^(-x)). Saida em (0, 1)."""
+    return 1.0 / (1.0 + math.exp(-x))
 
 
-def tanh_derivada_de_saida(a: float) -> float:
-    """Derivada da tanh a partir da saida ja calculada: tanh'(z) = 1 - tanh(z)^2 = 1 - a^2."""
-    return 1 - a**2
+def sigmoide_derivada_de_saida(a: float) -> float:
+    """f'(z) = a(1 - a), onde a = f(z) ja esta calculado."""
+    return a * (1 - a)
 
 
 class Neuronio:
+    """Um neuronio: calcula z_in = Soma(w*x) + bias e aplica sigmoide."""
+
     def __init__(self, pesos: list[float], bias: float):
         self.pesos: list[float] = pesos
         self.bias: float = bias
+        # Preenchidos a cada forward e consumidos no backprop da mesma amostra.
         self.entradas: list[float] = []
         self.soma_ponderada: float = 0.0
         self.saida: float = 0.0
-        # usado no backpropagation
+        # delta = info de erro do backprop (delta_k na saida, delta_j^h na oculta)
         self.delta: float = 0.0
 
     def calcular_saida(self, entradas: list[float]) -> float:
+        """z_in = Soma(w*x) + bias; saida = sigmoide(z_in). Guarda tudo pra usar no backprop."""
         self.entradas = entradas
 
-        # Variavel local pra nao acumular entre chamadas (erro classico com self.*).
         soma = 0.0
         for entrada, peso in zip(entradas, self.pesos):
             soma += entrada * peso
 
-        # z = Σ(w·x) + b  -> pre-ativacao (usada no backprop pra f'(z))
+        # z_in -> pre-ativacao usada no backprop pra f'(z_in).
         self.soma_ponderada = soma + self.bias
-        # a = f(z)  -> saida do neuronio, aperta z em (-1, +1).
-        self.saida = tanh(self.soma_ponderada)
+        # saida = f(z_in) -> pos-ativacao no intervalo (0, 1).
+        self.saida = sigmoide(self.soma_ponderada)
         return self.saida
 
 
 class Camada:
+    """Conjunto de neuronios que operam sobre a mesma entrada."""
+
     def __init__(self, num_neuronios: int, num_entradas: int):
-        self.neuronios = []
+        self.neuronios: list[Neuronio] = []
+
+        # Init uniforme com faixa adaptada ao tamanho da camada. Faixa maior em camadas
+        # pequenas (ajuda XOR a sair do platao), menor em camadas grandes (evita saturar
+        # a sigmoide). Ex: XOR (2->4) -> L=1.00; CARACTERES (120->55) -> L~=0.19.
+        limite = math.sqrt(6.0 / (num_entradas + num_neuronios))
         for _ in range(num_neuronios):
-            pesos = [random.uniform(-0.5, 0.5) for _ in range(num_entradas)]
+            pesos = [random.uniform(-limite, limite) for _ in range(num_entradas)]
             bias = 0.0
             self.neuronios.append(Neuronio(pesos, bias))
 
 
 class MLP:
+    """MLP com uma camada escondida: y = f(W * f(V * x))."""
+
     def __init__(self, tamanhos_camadas: list[int]):
+        """Ex: tamanhos_camadas = [120, 55, 26] -> 120 entradas, 55 ocultos, 26 saidas."""
         self.tamanhos_camadas = tamanhos_camadas
         self.camadas: list[Camada] = []
 
+        # Camada de entrada nao tem neuronios "proprios" - ela so alimenta a oculta.
+        # Por isso comecamos em i=1: a camada i recebe n_{i-1} entradas.
         for i in range(1, len(tamanhos_camadas)):
             camada = Camada(tamanhos_camadas[i], tamanhos_camadas[i - 1])
             self.camadas.append(camada)
 
     def forward(self, entrada: list[float]) -> list[float]:
+        """Propaga x pela rede e devolve o vetor de saida y."""
+
         ativacao = entrada
+
+        # Propaga camada por camada: a saida de cada camada vira a entrada da proxima.
         for camada in self.camadas:
-            novas_saidas = []
+            novas_saidas: list[float] = []
+            # Itera sobre os neuronios da camada atual
             for neuronio in camada.neuronios:
+                # Cada neuronio calcula sua saida a partir da ativacao (entrada) atual e armazena
                 neuronio.calcular_saida(ativacao)
                 novas_saidas.append(neuronio.saida)
             ativacao = novas_saidas
         return ativacao
 
-    def backpropagation(self, esperado: list[float], taxa_aprendizado: float):
-        # 1. Calcular delta da camada de saída
-        for i, neuronio in enumerate(self.camadas[-1].neuronios):
-            erro = esperado[i] - neuronio.saida
-            neuronio.delta = erro * tanh_derivada_de_saida(neuronio.saida)
+    def backpropagation(self, esperado: list[float], taxa_aprendizado: float) -> None:
+        """Propaga o erro de volta e atualiza pesos/bias pela regra delta."""
 
-        # 2. Calcular delta das camadas ocultas (de trás pra frente)
-        # 2.1 Iteramos de tras para frente, pulando a camada de saída (já calculada).
+        # Para cada neuronio da camada de saida, calcula delta_k = (t_k - y_k) * f'(y_in_k).
+        for k, neuronio in enumerate(self.camadas[-1].neuronios):
+            erro = esperado[k] - neuronio.saida
+            neuronio.delta = erro * sigmoide_derivada_de_saida(neuronio.saida)
+
+        # Percorre as camadas ocultas do final pro inicio
         for j in range(len(self.camadas) - 2, -1, -1):
             camada_atual = self.camadas[j]
             camada_acima = self.camadas[j + 1]
 
+            # Para cada neuronio da camada atual, calcula delta_j^h = (Soma delta_k * w_jk) * f'(z_in_j).
             for i, neuronio in enumerate(camada_atual.neuronios):
-                # O delta do neuronio atual depende dos deltas da camada acima e dos pesos.
                 erro = 0.0
                 for neuronio_acima in camada_acima.neuronios:
                     erro += neuronio_acima.delta * neuronio_acima.pesos[i]
-                neuronio.delta = erro * tanh_derivada_de_saida(neuronio.saida)
+                neuronio.delta = erro * sigmoide_derivada_de_saida(neuronio.saida)
 
-        # 3. Atualizar pesos e bias de todas as camadas
+        # Com o delta de cada neuronio calculado, atualiza os pesos e bias da rede
         for camada in self.camadas:
             for neuronio in camada.neuronios:
+                # Para cada entrada, atualiza o peso respectivo
                 for i, entrada in enumerate(neuronio.entradas):
-                    # Atualização do peso: w = w (peso anterior) + taxa_aprendizado * delta * entrada
-                    neuronio.pesos[i] = (
-                        neuronio.pesos[i] + taxa_aprendizado * neuronio.delta * entrada
-                    )
-                # Atualização do bias: b = b (bias anterior) + taxa_aprendizado * delta
-                neuronio.bias = neuronio.bias + taxa_aprendizado * neuronio.delta
+                    # Novo peso = peso antigo + ajuste, onde ajuste = taxa_aprendizado * delta * entrada
+                    neuronio.pesos[i] += taxa_aprendizado * neuronio.delta * entrada
+                # Novo bias = bias antigo + ajuste, onde ajuste = taxa_aprendizado * delta * 1 (x_0 = 1)
+                neuronio.bias += taxa_aprendizado * neuronio.delta
 
     def treinar(
         self,
         dados_treino: list[Amostra],
         taxa_aprendizado: float,
         epocas: int,
-    ) -> list[float]:
-        """Treina a rede e retorna o historico de MSE por epoca."""
-        historico_erro: list[float] = []
-        # Padding pro numero da epoca ficar alinhado (ex: "   1", "  42", "1000").
+        dados_validacao: list[Amostra] | None = None,
+    ) -> tuple[list[float], list[float]]:
+        """Treina por backpropagation e retorna (historico_treino, historico_validacao)."""
+        historico_treino: list[float] = []
+        historico_validacao: list[float] = []
+        # padding pra alinhar numero da epoca no print
         largura = len(str(epocas))
-        for epoca in range(epocas):
-            erro_epoca = 0.0
-            for amostra in dados_treino:
-                saida = self.forward(amostra.entrada)
-                self.backpropagation(amostra.esperado, taxa_aprendizado)
 
-                for s, esp in zip(saida, amostra.esperado):
-                    erro_epoca += (esp - s) ** 2
-            erro_medio = erro_epoca / len(dados_treino)
-            historico_erro.append(erro_medio)
-            print(f"Epoca {epoca + 1:>{largura}}/{epocas} - MSE: {erro_medio:.6f}")
-        return historico_erro
+        for epoca in range(epocas):
+            # Shuffle por epoca: evita decorar a ordem das amostras e ajuda generalizacao.
+            random.shuffle(dados_treino)
+            erro_treino = 0.0
+            # Treino: pra cada amostra, faz forward, backprop e acumula o erro (t_k - y_k)^2.
+            for amostra in dados_treino:
+                # Forward: propaga a entrada e calcula a saida da rede ate a camada de saida.
+                saida = self.forward(amostra.entrada)
+                # Backpropagation: propaga o erro de volta e atualiza os pesos da rede.
+                self.backpropagation(amostra.esperado, taxa_aprendizado)
+                # Acumula somatorio de (t_k - y_k)^2 pra depois virar MSE da epoca.
+                for y, t in zip(saida, amostra.esperado):
+                    erro_treino += (t - y) ** 2
+            mse_treino = erro_treino / len(dados_treino)
+            historico_treino.append(mse_treino)
+
+            # MSE de validacao: so forward, sem backpropagation.
+            msg_validacao = ""
+            if dados_validacao:
+                erro_val = 0.0
+                for amostra in dados_validacao:
+                    # Apenas fazemos forward nas amostras de validacao, sem atualizar pesos, e acumulamos o erro.
+                    saida = self.forward(amostra.entrada)
+                    for y, t in zip(saida, amostra.esperado):
+                        erro_val += (t - y) ** 2
+                mse_val = erro_val / len(dados_validacao)
+                historico_validacao.append(mse_val)
+                msg_validacao = f"  |  Val: {mse_val:.6f}"
+
+            print(
+                f"Epoca {epoca + 1:>{largura}}/{epocas} - MSE: {mse_treino:.6f}{msg_validacao}"
+            )
+
+        # Retornamos historicos de MSE pra plotar grafico depois. Se nao tiver validacao, o segundo vetor fica vazio.
+        return historico_treino, historico_validacao
 
     def testar(self, dados_teste: list[Amostra]) -> list[ResultadoTeste]:
-        """Roda forward em cada amostra de teste e retorna lista de ResultadoTeste."""
+        """Avalia a rede em cada amostra de teste e devolve lista de `ResultadoTeste`."""
         resultados: list[ResultadoTeste] = []
         for amostra in dados_teste:
-            saida = self.forward(amostra.entrada)
+            y = self.forward(amostra.entrada)
             if len(amostra.esperado) == 1:
-                # Classificacao binaria bipolar: sinal da saida decide
-                predita = 1 if saida[0] > 0 else -1
-                esperada = 1 if amostra.esperado[0] > 0 else -1
+                # Binario (portas logicas): threshold 0.5 (ponto medio da sigmoide) decide 0 ou 1.
+                predita = 1 if y[0] > 0.5 else 0
+                esperada = 1 if amostra.esperado[0] > 0.5 else 0
             else:
-                # Multiclasse: indice do maior valor
-                predita = saida.index(max(saida))
+                # Multiclasse (caracteres): classe = indice do neuronio com maior ativacao.
+                predita = y.index(max(y))
                 esperada = amostra.esperado.index(max(amostra.esperado))
             resultados.append(
                 ResultadoTeste(
                     entrada=amostra.entrada,
                     esperado_raw=amostra.esperado,
-                    saida_raw=saida,
+                    saida_raw=y,
                     classe_predita=predita,
                     classe_esperada=esperada,
                     acerto=(predita == esperada),
                 )
             )
         return resultados
-
-    def visualizar_arquitetura(self):
-        print("=" * 50)
-        print("          Arquitetura da MLP")
-        print("=" * 50)
-        print(f"  Camada de entrada: {self.tamanhos_camadas[0]} entradas")
-        print("-" * 50)
-        for i, camada in enumerate(self.camadas):
-            tipo = "saida" if i == len(self.camadas) - 1 else "oculta"
-            print(f"  Camada {i + 1} ({tipo}): {len(camada.neuronios)} neuronios")
-            for j, neuronio in enumerate(camada.neuronios):
-                pesos_fmt = [f"{p:.4f}" for p in neuronio.pesos]
-                print(
-                    f"    Neuronio {j + 1}: pesos={pesos_fmt}, bias={neuronio.bias:.4f}"
-                )
-            print("-" * 50)
-        print("=" * 50)
-
-
-if __name__ == "__main__":
-    # Exemplo de uso
-    MLP_teste = MLP([2, 3, 1, 7, 2])
-    MLP_teste.visualizar_arquitetura()
